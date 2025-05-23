@@ -1,0 +1,202 @@
+ezSkill: Hyper-Personalized Micro-Learning Paths
+1. Idea & Vision
+Product Name: ezSkill
+Tagline: Master new skills, effortlessly. Your AI-powered learning journey.
+
+Vision: To democratize personalized education by intelligently curating adaptive learning paths tailored to individual learners' current knowledge, preferred styles, and career aspirations. ezSkill aims to provide a frictionless, highly effective, and engaging learning experience by leveraging the vast resources of the internet and cutting-edge AI.
+
+Problem Solved:
+
+Learning Inefficiency: Learners struggle to find relevant, sequential content, leading to wasted time and frustration.
+Lack of Personalization: One-size-fits-all courses don't adapt to individual needs, leading to disengagement and high dropout rates.
+Information Overload: Overwhelming number of online resources makes it hard to identify high-quality, relevant materials.
+Disconnected Learning: Difficult to map abstract learning to concrete career goals and industry demands.
+Target Audience:
+
+Individual Professionals: Seeking to rapidly acquire new skills for career advancement or transitions.
+Students: Supplementing formal education, filling knowledge gaps, or preparing for specific certifications.
+Small to Medium Businesses (SMBs): Looking for scalable, personalized training solutions for their workforce.
+2. Core Features (MVP Focus)
+The MVP will establish the foundational loop of "Assess -> Plan -> Learn -> Adapt."
+
+2.1. User Management & Onboarding
+User Registration & Login: Secure account creation via email/password or OAuth (Google, GitHub).
+Initial Skill Assessment: Interactive quizzes or text-based input to gauge current knowledge across predefined skill domains (e.g., Python, Data Science, Cloud Computing).
+Learning Goal Definition: Users articulate specific skills to acquire or career roles they aspire to (e.g., "Become a Certified AWS Solutions Architect," "Master React Development").
+Learning Style Preference: Users select preferred learning modalities (e.g., visual, auditory, kinesthetic) and resource types (e.g., video tutorials, articles, interactive exercises, code examples).
+2.2. Dynamic Learning Path Generation
+Personalized Path Creation: AI generates a sequence of micro-lessons using externally curated content, customized to the user's assessment, goals, and learning style.
+Micro-Lesson Sequencing: Paths are logically ordered, ensuring foundational prerequisites are covered before advanced topics (leveraging the Neo4j Knowledge Graph).
+Resource Recommendations: Each micro-lesson links to high-quality external online resources (articles, videos, interactive labs).
+Path Visualization: An interactive dashboard displays the learning path, indicating progress and upcoming modules.
+2.3. Adaptive Learning & Feedback
+Progress Tracking: Users mark modules/resources as complete.
+Reinforcement Quizzes: Short, contextual quizzes after modules to confirm understanding.
+Real-time Adaptation: If a user struggles (e.g., fails a quiz, flags a topic as difficult), the AI dynamically adjusts the path by:
+Recommending prerequisite content.
+Offering alternative learning resources tailored to their preferred style.
+Proposing a simplified explanation.
+"Explain-It-To-Me" (Conceptual Explainer): Users can highlight a concept and request a simpler, analogy-driven explanation.
+2.4. Content Ingestion & Curation Pipeline
+Automated Content Fetching (MVP: Curated Sources): Ingests content from a pre-defined, high-quality list (e.g., specific educational websites, open-source documentation, reputable public datasets).
+Text Extraction & Chunking: Processes fetched content (e.g., video transcripts, article text) into smaller, semantically meaningful segments.
+Embedding Generation: Converts each content chunk into a high-dimensional vector embedding.
+Metadata Extraction & Graph Linking: Extracts key topics, skills, and prerequisites from content, linking them into the Neo4j Knowledge Graph.
+3. Tech Stack Deep Dive & How Everything Ties Together
+ezSkill employs a microservices architecture deployed on Kubernetes, integrating MLOps for its AI components.
+
+Frontend (React/Next.js):
+Purpose: User interface, interactive learning dashboard.
+Interaction: Communicates with the Backend (Node.js) API via REST calls. Uses Supabase JS SDK for direct client-side authentication and potentially real-time progress updates.
+Backend (Node.js - Express.js/NestJS):
+Purpose: API Gateway, Core Business Logic, Orchestration.
+Tools: Express.js (lightweight) or NestJS (structured, opinionated for large apps), TypeScript for type safety, Node.js PostgreSQL client library.
+Interaction:
+Receives requests from Frontend.
+Uses Supabase JS SDK for core data (user profiles, learning paths, progress) and Auth.
+Publishes events to Kafka (e.g., user_assessments, learning_progress_updates) to trigger asynchronous AI agent processing.
+Consumes events from Kafka (e.g., generated_paths, skill_gap_analysis) to update Supabase and push results to Frontend.
+Makes HTTP requests to AI Agent services for synchronous calls (e.g., "Explain-It-To-Me").
+Uses Redis client library for caching, rate limiting, and session management.
+Queries Neo4j (via its Node.js driver) for logical skill dependencies and prerequisites.
+AI Agent Services (Python - FastAPI/Flask/Gunicorn):
+Purpose: Independent microservices housing the core AI logic. Python remains ideal here due to its rich AI/ML ecosystem.
+Tools: LangChain / LlamaIndex (for Model Context Protocol and RAG orchestration), OpenAI/Anthropic APIs (for LLMs), Sentence Transformers (for embeddings).
+Interaction:
+Consume relevant events from Kafka (e.g., path_recalculation_requests) to trigger their processing.
+Perform RAG queries against Pinecone (Vector Database) to retrieve semantically relevant content.
+Perform queries against Neo4j (Graph Database) to understand logical relationships (prerequisites, skill hierarchies).
+Use LLMs (via API calls) to generate personalized content, paths, or explanations, augmented by RAG.
+Publish results back to Kafka (e.g., generated_paths, skill_gap_analysis).
+Content Ingestion Service (Python - FastAPI/Flask/Gunicorn):
+Purpose: Automated pipeline for fetching, processing, and indexing learning content.
+Tools: PyPDF2/pdfminer.six, web scraping libs, Sentence Transformers.
+Interaction:
+Triggered by Prefect/Dagster (ML Pipeline Orchestrator) or by new content events on Kafka.
+Fetches content, extracts text, performs chunking.
+Generates embeddings and indexes them into Pinecone (Vector DB).
+Extracts metadata (topics, skills) and inserts/updates nodes and relationships in Neo4j (Graph DB).
+Stores original files in Supabase Storage.
+Databases:
+Supabase (PostgreSQL): Relational data (users, progress, metadata), Authentication, File Storage. The core relational data store.
+Pinecone (Vector Database): Stores all vector embeddings for fast similarity search (Core of RAG).
+Neo4j (Graph Database): Stores the explicit Knowledge Graph of skills, concepts, relationships, and dependencies.
+How it all ties together (Example Flow: Adapting a Learning Path after a Quiz):
+
+User Action (Frontend): User completes a quiz on a topic and submits answers.
+Backend (Node.js): Receives quiz results. Validates answers, updates user_progress in Supabase. Publishes a learning_progress_updates event (including quiz score, topic, and user ID) to Kafka.
+ML Pipeline Orchestrator (Prefect/Dagster): Listens to learning_progress_updates on Kafka. If the user struggled on the quiz, it triggers the RecalculateLearningPath ML pipeline for that user.
+Adaptive Path Agent (AI Service): This agent is a consumer of the RecalculateLearningPath pipeline (or directly listens to a Kafka topic).
+Receives the user's updated progress and identified difficulty area.
+RAG (Pinecone): Converts the difficult topic/skill into an embedding. Queries Pinecone for semantically similar, alternative learning resources, or simpler content related to that topic.
+Neo4j (Graph DB): Queries Neo4j to identify direct prerequisites for the struggled topic. If the user missed foundational knowledge, it identifies those prerequisite skills/concepts that need to be revisited.
+LLM (LangChain/LlamaIndex): Uses LangChain/LlamaIndex to orchestrate RAG. The LLM receives a prompt with retrieved context from Pinecone (alternative resources) and logical pathways from Neo4j (prerequisites). It generates an adapted learning path, inserting review modules or simpler explanations.
+Output: Publishes an adapted_paths event to Kafka.
+Backend (Node.js): Consumes the adapted_paths event from Kafka. Stores the updated path in Supabase.
+Frontend (React/Next.js): Fetches the new, adapted learning path from the Backend and updates the user's dashboard, showing the revised journey.
+4. SDLC & MLOps Implementation Plan (Structured as a Team)
+This plan assumes a 1-week rapid MVP sprint, breaking down tasks daily across functional areas.
+
+Team Roles (Conceptual):
+
+Product Owner (You): Defines features, prioritizes, ensures alignment with vision.
+Frontend Dev(s): UI/UX, client-side logic.
+Backend Dev(s): API, core business logic, database interaction, message queues (Node.js).
+AI/MLOps Engineer(s): AI agents, RAG, Knowledge Graph, data pipelines, MLOps tooling (Python-centric).
+DevOps/SRE (You/Shared): Infrastructure, CI/CD, monitoring, security.
+Day 1: Foundation & Setup
+Planning (PO): Finalize MVP features in Jira, create epics, user stories, and tasks. Define daily goals.
+Design (All): High-level architecture review. Define core data models for Supabase. Sketch UI flows in Figma.
+Infra/DevOps:
+IaC (Terraform): Provision core cloud resources: Kubernetes cluster (EKS/GKE/AKS), managed Supabase (PostgreSQL), managed Redis, managed Kafka, managed Pinecone instance, managed Neo4j instance.
+Supabase: Initial project setup, create users, skill_goals, learning_paths tables, enable pgvector (though Pinecone will be primary vector store).
+Neo4j: Spin up instance. Load a very small, manually curated graph of core skill dependencies (e.g., 50 skills, 100 relationships).
+Pinecone: Create initial index.
+Docker: Basic Dockerfiles for placeholder frontend, Node.js backend, and a simple "hello world" Python AI agent.
+Git: Set up repository structure, initial .gitignore.
+Frontend Dev: Set up Next.js project, basic routing, user registration/login pages (using Supabase JS SDK).
+Backend Dev (Node.js): Set up Node.js (Express.js/NestJS) project, basic API endpoints for user registration. Connect to Supabase Auth.
+AI/MLOps: Set up Python environment. Install LangChain/LlamaIndex, OpenAI libs. Create a basic Python script for embedding generation and Pinecone upsert.
+Day 2: Core AI - Content Ingestion & Initial RAG
+Design (AI/MLOps): Detailed design for Content Ingestion Pipeline: chunking strategy, embedding model choice.
+Backend Dev (Node.js): Implement content upload API (to Supabase Storage).
+AI/MLOps:
+Content Ingestion Service (Python): Develop Python service to:
+Fetch content from a few predefined URLs/PDFs (from Supabase Storage).
+Extract text, perform chunking.
+Generate embeddings for chunks using Sentence Transformers.
+Pinecone: Upsert embeddings to Pinecone index, linking to content metadata in Supabase.
+Neo4j: Extract basic skills/topics and update Neo4j with (Content)-[:CONTAINS_CONCEPT]->(Concept) or (Content)-[:TEACHES_SKILL]->(Skill) relationships for some sample content.
+MLflow/W&B: Instrument Content Ingestion Service to log runs, track content processed, embedding time, and Pinecone upsert counts.
+Kafka: Define content_ingestion_events topic. Content Ingestion Service publishes to this topic.
+Frontend Dev: Implement basic UI for uploading content (for testing the pipeline).
+Day 3: Core AI - Assessment & Personalized Path Generation
+Design (AI/MLOps): Design for Knowledge Assessment Agent and Adaptive Path Agent. Define core RAG prompts.
+Frontend Dev: Develop interactive quiz UI for initial skill assessment. Build a learning path display component.
+Backend Dev (Node.js): Implement API endpoint for skill assessment submission. Set up API for retrieving learning paths.
+AI/MLOps:
+Knowledge Assessment Agent (Python):
+Consumes assessment results from Backend.
+RAG (Pinecone): Queries Pinecone for relevant knowledge points based on assessment answers.
+LLM (LangChain/LlamaIndex): Uses LLM with RAG context to identify specific skill gaps and quantify user proficiency.
+Publishes skill_gap_analysis event to Kafka.
+Adaptive Path Agent (Python):
+Consumes skill_gap_analysis events from Kafka.
+RAG (Pinecone): Queries Pinecone for micro-lessons and resources semantically relevant to user's goals and gaps.
+Neo4j: Queries Neo4j to enforce prerequisite order and identify logical skill dependencies for the learning path.
+LLM (LangChain/LlamaIndex): Generates the personalized learning path sequence.
+Publishes generated_paths event to Kafka.
+Kafka: Define skill_gap_analysis and generated_paths topics.
+MLOps: Instrument AI Agents with MLflow/W&B to track LLM token usage, latency, RAG recall, and path generation time.
+Day 4: Adaptive Learning & Observability Foundation
+Frontend Dev: Implement progress tracking (mark module complete), simple "Explain-It-To-Me" button.
+Backend Dev (Node.js): Implement progress update API.
+AI/MLOps:
+"Explain-It-To-Me" Agent (Python):
+Receives concept from Backend.
+RAG (Pinecone): Queries Pinecone for simplified explanations or analogies.
+LLM (LangChain/LlamaIndex): Generates simplified explanation.
+Prefect/Dagster: Set up basic content ingestion pipeline to run nightly or on new Kafka content_ingestion_events.
+Prometheus & Grafana:
+Deploy Prometheus/Grafana in K8s.
+Instrument all services (Frontend, Node.js Backend, Python AI Agents, Content Ingestion) with Prometheus client libraries to expose metrics.
+Create initial Grafana dashboards for CPU/Memory, HTTP request rates, error rates, Kafka consumer lag.
+ELK Stack:
+Deploy Elasticsearch, Logstash, Kibana in K8s.
+Configure Fluentd/Filebeat to ship all container logs to Logstash/Elasticsearch.
+Create basic Kibana dashboards for log search, error trending.
+Day 5: CI/CD & Security
+DevOps/All:
+CI/CD (GitHub Actions/GitLab CI):
+Set up comprehensive CI pipeline: git push triggers linting (ESLint, Black/Flake8), unit tests (Jest, Pytest), static code analysis (SonarQube scan), dependency vulnerability scan (Snyk/Trivy for Docker images).
+Docker: Optimize Dockerfiles for Node.js and Python services.
+Secrets Management (Kubernetes Secrets): Store all API keys (LLM providers, Pinecone, Neo4j, Supabase) as K8s Secrets, mounted securely into pods.
+Frontend Dev: Implement basic analytics (e.g., tracking module completions).
+Backend Dev (Node.js): Add basic rate limiting with Redis (using a Node.js Redis client).
+AI/MLOps: Set up DVC for versioning a small portion of the curated content dataset.
+Day 6: Refinement & Deployments
+DevOps/All:
+CI/CD: Implement CD to staging environment. Set up manual approval gate for production deployment.
+Helm: Create Helm charts for the entire application for repeatable deployments.
+Kubernetes: Configure Ingress controller for external access.
+Alerting: Configure Alertmanager with basic alerts for critical errors (e.g., 5xx errors, AI agent failures) to Slack.
+Frontend Dev: UI/UX polish, ensuring responsiveness.
+Backend Dev (Node.js): Add robust error handling, detailed logging.
+AI/MLOps:
+ML Model Monitoring (Evidently AI): Set up basic monitoring for data drift on user assessment inputs and initial model performance metrics.
+Conduct a small A/B test (conceptually) for a new RAG prompt using MLflow.
+Documentation (Confluence): Update API docs, deployment guide, troubleshooting basics.
+Day 7: Showcase, Feedback, & Next Steps
+Product Owner: Prepare for demonstration.
+Team: Final bug squashing, minor UI tweaks.
+Demonstration: Showcase the working MVP.
+Feedback: Collect initial feedback from target users (e.g., few pilot learners).
+MLOps: Review MLflow dashboard, Grafana metrics, Kibana logs for insights from the MVP.
+Future Planning (PO/All): Capture feedback in Jira. Brainstorm future features:
+Deeper integration with external learning platforms.
+Multimodal content ingestion (images, interactive simulations).
+Advanced learning analytics and certifications.
+Gamification elements.
+Support for multiple languages.
+More sophisticated ethical AI checks for content and recommendations.
+Enterprise features (team collaboration, SSO).
